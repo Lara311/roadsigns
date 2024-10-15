@@ -34,3 +34,8 @@ async def predict(file: UploadFile = File(...)):
     
     # Process the model output (For simplicity, we return the raw output)
     return {"predictions": outputs[0].tolist()}
+
+@app.get("/packages")
+async def list_packages():
+    result = subprocess.run(['pip', 'freeze'], stdout=subprocess.PIPE)
+    return {"installed_packages": result.stdout.decode('utf-8').split('\n')}
