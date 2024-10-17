@@ -11,38 +11,41 @@ onnx_model_path = 'yolov5s.onnx'
 session = ort.InferenceSession(onnx_model_path)
 
 def preprocess_image(image: Image.Image):
-    try:
-        # Resize the image to 640x640
-        image = image.resize((640, 640))  
-        image_np = np.array(image).astype(np.float32)  # Convert to numpy array
-        image_np = np.transpose(image_np, [2, 0, 1])  # Convert to CHW format
-        image_np = np.expand_dims(image_np, axis=0)  # Add batch dimension of 1
-
-        # Repeat the image to create a batch of 16 (or adjust the batch size as needed)
-        image_np = np.repeat(image_np, 16, axis=0)  # Repeat along the batch dimension
-        
-        return image_np
-    except Exception as e:
-        print(f"Error in preprocessing image: {str(e)}")
-        raise
+    # Resize the image to 640x640 (expected input size for YOLOv5 model)
+    image = image.resize((640, 640))
+    
+    # Convert image to numpy array and scale pixel values to [0, 1]
+    image_np = np.array(image).astype(np.float32) / 255.0
+    
+    # Transpose image to match model input shape (C, H, W)
+    image_np = np.transpose(image_np, [2, 0, 1])
+    
+    # Add batch dimension (now the shape is 1, 3, 640, 640 for one image)
+    image_np = np.expand_dims(image_np, axis=0)
+    
+    return image_np
 
 @app.post("/predict/")
 async def predict(file: UploadFile = File(...)):
-    # Read the uploaded image
-    image = Image.open(io.BytesIO(await file.read())).convert("RGB")
+    try:
+        # Load the image from the uploaded file
+        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
+        
+        # Preprocess the image
+        input_tensor = preprocess_image(image)
+        
+        # Get the model's input and output names
+        input_name = session.get_inputs()[0].name
+        output_name = session.get_outputs()[0].name
+        
+        # Run inference
+        outputs = session.run([output_name], {input_name: input_tensor})
+        
+        # Return the outputs (You can customize this based on what YOLOv5 returns)
+        return {"outputs": outputs}
     
-    # Preprocess the image
-    input_tensor = preprocess_image(image)
-    
-    # Get input and output names from the model
-    input_name = session.get_inputs()[0].name
-    output_name = session.get_outputs()[0].name
-    
-    # Run the model
-    outputs = session.run([output_name], {input_name: input_tensor})
-    
-    # Process the model output (For simplicity, we return the raw output)
-    return {"predictions": outputs[0].tolist()}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/packages")
 async def list_packages():
